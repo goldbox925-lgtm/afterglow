@@ -1,0 +1,234 @@
+/* =====================================================================
+   Interface — minimal, cinematic, auto-hiding.
+   Every control here is wired to real behaviour; nothing is decorative.
+   ===================================================================== */
+window.AG = window.AG || {};
+
+AG.UI = (function () {
+  const U = AG.U, C = AG.CONFIG;
+  const $ = (id) => document.getElementById(id);
+  let stateShownAt = 0;
+  let idle = 0, hidden = false, forceHidden = false, cardTimer = null, lastHint = '';
+
+  const ICON = {
+    play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
+    replay: '<svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>',
+    soundOn: '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>',
+    soundOff: '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zm16.6 3 2.1-2.1-1.4-1.4-2.1 2.1-2.1-2.1-1.4 1.4 2.1 2.1-2.1 2.1 1.4 1.4 2.1-2.1 2.1 2.1 1.4-1.4z"/></svg>',
+    mic: '<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1a7 7 0 0 0 6-6.9z"/></svg>',
+    regen: '<svg viewBox="0 0 24 24"><path d="M3 21V9l4-3v15zm6 0V3h6v18zm8 0V8l4 2v11z"/></svg>',
+    full: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3zm11-5h5v5h-2V6h-3zM6 15v3h3v2H4v-5zm12 3v-3h2v5h-5v-2z"/></svg>',
+    help: '<svg viewBox="0 0 24 24"><path d="M11 18h2v-2h-2zm1-16a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm0-14a4 4 0 0 0-4 4h2a2 2 0 1 1 4 0c0 2-3 1.8-3 5h2c0-2.3 3-2.5 3-5a4 4 0 0 0-4-4z"/></svg>'
+  };
+
+  function init(handlers) {
+    $('btnPlay').innerHTML = ICON.play;
+    $('btnReplay').innerHTML = ICON.replay;
+    $('btnSound').innerHTML = ICON.soundOn;
+    $('btnVoice').innerHTML = ICON.mic;
+    $('btnRegen').innerHTML = ICON.regen;
+    $('btnFull').innerHTML = ICON.full;
+    $('btnHelp').innerHTML = ICON.help;
+
+    // state chips: the five emotional states (presentation navigation: jump, earlier states auto-complete)
+    const chips = $('chapters');
+    C.states.forEach((st) => {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.textContent = st.num;
+      b.title = `${st.num} — ${st.title}: ${st.subtitle} (presentation jump)`;
+      b.dataset.id = st.id;
+      b.addEventListener('click', () => handlers.jump(st.id));
+      chips.appendChild(b);
+    });
+    // feedback where the viewer clicks
+    U.on('tap', (e) => {
+      const r = document.createElement('span');
+      r.className = e.near ? 'near' : e.far ? 'far' : '';
+      r.style.left = e.x + 'px'; r.style.top = e.y + 'px';
+      $('ripples').appendChild(r); setTimeout(() => r.remove(), 1500);
+    });
+    U.on('state', (e) => { showCard(C.states.find((s) => s.id === e.state), e.why === 'jump'); stateShownAt = performance.now(); });
+    U.on('cinematicEnd', () => { stateShownAt = performance.now(); });
+
+    // camera modes
+    const sel = $('camMode');
+    AG.Camera.MODES.forEach((m) => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.label; sel.appendChild(o); });
+    sel.addEventListener('change', () => handlers.camera(sel.value));
+    U.on('cameraMode', (m) => { sel.value = m; });
+
+    $('btnPlay').addEventListener('click', handlers.toggle);
+    $('btnReplay').addEventListener('click', handlers.replay);
+    $('btnSound').addEventListener('click', handlers.sound);
+    $('btnVoice').addEventListener('click', handlers.voice);
+    $('btnRegen').addEventListener('click', handlers.regen);
+    $('btnFull').addEventListener('click', handlers.fullscreen);
+    $('btnHelp').addEventListener('click', () => toggleHelp());
+    $('helpClose').addEventListener('click', () => toggleHelp(false));
+    $('endReplay').addEventListener('click', handlers.replay);
+    $('sens').addEventListener('input', (e) => { AG.Mic.sensitivity = parseFloat(e.target.value); $('sensVal').textContent = AG.Mic.sensitivity.toFixed(1) + '×'; });
+    $('quality').addEventListener('change', (e) => handlers.quality(e.target.value));
+    $('vol').addEventListener('input', (e) => { AG.Audio.setVolume(parseFloat(e.target.value)); if (AG.Audio.muted && parseFloat(e.target.value) > 0) AG.Audio.setMuted(false); });
+    // character asset report (Help panel): the offline audit of the files you supplied + what the browser verified
+    const renderAssets = () => {
+      const rows = AG.CharacterAssets.report().map((r) => {
+        const bad = /CHECKERBOARD|DUPLICATE/.test(r.audit);
+        const st = r.status === 'ok' ? 'ok' : r.status;
+        return `<div class="arow ${bad ? 'warn' : ''}"><b>${r.id}</b><span>${r.name}</span><span class="st ${st}">${st}</span><span class="au">${r.audit}${r.status !== 'ok' && r.message ? ' · ' + r.message : ''}</span></div>`;
+      });
+      $('assetReport').innerHTML = rows.join('');
+    };
+    renderAssets();
+    U.on('characterAsset', renderAssets);
+
+    U.on('playstate', (pl) => { $('btnPlay').innerHTML = pl ? ICON.pause : ICON.play; $('btnPlay').title = pl ? 'Pause (Space)' : 'Play (Space)'; document.body.classList.toggle('paused', !pl); });
+    U.on('muted', (m) => { $('btnSound').innerHTML = m ? ICON.soundOff : ICON.soundOn; $('btnSound').classList.toggle('off', m); });
+    U.on('mic', (M) => {
+      const b = $('btnVoice');
+      b.classList.toggle('on', M.state === 'on');
+      b.classList.toggle('warn', ['denied', 'unavailable', 'insecure'].includes(M.state));
+      $('voicePanel').classList.toggle('show', M.state === 'on');
+      $('micStatus').textContent = M.state === 'off' ? 'voice off' : M.state === 'on' ? 'voice on' : M.state === 'requesting' ? 'asking…' : 'voice unavailable';
+      $('micStatus').className = 'pill ' + M.state;
+      if (M.message && M.state !== 'on') toast(M.message);
+      if (M.state === 'on') toast('Voice Mode on — the city hears loudness, brightness and duration. Nothing is recorded.');
+    });
+    U.on('finale', () => { setTimeout(() => { if (AG.Flight.finale) { document.body.classList.add('ended'); $('endCard').classList.add('show'); } }, 13000); });
+    U.on('reset', () => { $('endCard').classList.remove('show'); document.body.classList.remove('ended'); });
+    U.on('replay', () => { $('endCard').classList.remove('show'); document.body.classList.remove('ended'); });
+    U.on('quality', (q) => { $('tierNow').textContent = q; });
+    U.on('audioMode', (m) => { $('audioMode').textContent = m === 'mp3' ? 'soundtrack: MP3' : 'soundtrack: generative score'; });
+
+    const wake = () => { idle = 0; };
+    window.addEventListener('pointermove', wake); window.addEventListener('keydown', wake); window.addEventListener('pointerdown', wake);
+  }
+
+  function showCard(st, labelOnly) {
+    const card = $('chapterCard');
+    if (!st) return;
+    $('chapterLabel').textContent = st.num + ' · ' + st.title;
+    const idx = AG.stateIndex(st.id);
+    document.querySelectorAll('#chapters .chip').forEach((b, i) => { b.classList.toggle('active', i === idx); b.classList.toggle('done', i < idx); });
+    if (labelOnly) { card.classList.remove('show'); return; }
+    $('cardNum').textContent = st.num;
+    $('cardTitle').textContent = st.title;
+    $('cardSub').textContent = st.subtitle;
+    card.classList.remove('show'); void card.offsetWidth; card.classList.add('show');
+    clearTimeout(cardTimer); cardTimer = setTimeout(() => card.classList.remove('show'), 4200);
+  }
+
+  function toggleHelp(force) {
+    const h = $('help');
+    const show = force === undefined ? !h.classList.contains('show') : force;
+    h.classList.toggle('show', show);
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4200);
+  }
+
+  /* the prompt for this moment (context sensitive, never a score) */
+  function promptFor(st) {
+    const F = AG.FSM, IA = AG.Interactions;
+    if (F.cinematic) return { title: 'WATCH THE SCENE', text: 'Interaction will begin in a moment.' };
+    const def = C.states.find((s) => s.id === st);
+    if (st === 'AFTERGLOW') {
+      if (AG.Flight.finale) return null;
+      if (F.mode === 'ASCENSION') return null;
+      if (F.stateTime > 50 && F.modeTime > 30) return { title: 'Becoming the light', text: 'Hold ↑ to rise. Let go to hover.' };
+      return { title: def.title, text: def.prompt };
+    }
+    if (st === 'NUMBNESS') return { title: 'FIND THE LIGHT', text: def.prompt };
+    if (st === 'FRACTURE') return { title: 'RESTORE THE LIGHTS', text: def.prompt };
+    if (st === 'AWAKENING') return { title: 'WAKE THE CITY', text: def.prompt };
+    if (st === 'RECLAIMING_SELF') return { title: 'CONNECT THE BUILDINGS', text: def.prompt };
+    return { title: def.title, text: def.prompt };
+  }
+
+  function update(dt, S) {
+    idle += dt;
+    const F = AG.FSM, IA = AG.Interactions, st = F.state;
+    const helpOpen = $('help').classList.contains('show');
+    const shouldHide = forceHidden || (st === 'AFTERGLOW' && idle > 3.5 && !helpOpen && F.playing);
+    if (shouldHide !== hidden) { hidden = shouldHide; document.body.classList.toggle('ui-hidden', hidden); }
+    // overall progress (no numbers): restoration toward the flight, then altitude toward the light
+    const NC = C.interaction.network, idx = AG.stateIndex(st);
+    let prog = st === 'AFTERGLOW' ? 0.8 + 0.2 * AG.Flight.asc : Math.min(0.8, idx * 0.1 + 0.5 * U.clamp(AG.Interactions.progress / NC.toAfterglow, 0, 1));
+    $('progress').style.width = (prog * 100).toFixed(1) + '%';
+    const def = C.states[idx];
+    $('timeText').textContent = st === 'AFTERGLOW' && AG.Flight.arc ? AG.Flight.phase : AG.Flight.finale ? 'LIGHT' : def.title;
+    if (S.hint !== lastHint) { lastHint = S.hint; $('hint').textContent = S.hint; $('hint').classList.toggle('show', !!S.hint); }
+    $('meterFill').style.width = (AG.Mic.level * 100).toFixed(0) + '%';
+    document.body.classList.toggle('flying', st === 'AFTERGLOW');
+    document.body.classList.toggle('cinematic', !!F.cinematic);
+    // ---- the prompt ----
+    const pr = F.playing ? promptFor(st) : null;
+    const panel = $('stagePanel');
+    const key = pr ? pr.title + pr.text : '';
+    if (panel.dataset.key !== key) { panel.dataset.key = key; if (pr) { $('stageTitle').textContent = pr.title; $('stageText').textContent = pr.text; } stateShownAt = performance.now(); }
+    panel.classList.toggle('show', !!pr);
+    panel.classList.toggle('compact', !!pr && st === 'AFTERGLOW' && (performance.now() - stateShownAt) > 7000);
+    let done = 0, total = 0;
+    if (st === 'FRACTURE') { done = IA.stabilised; total = C.interaction.fragile.needed; }
+    else if (st === 'AWAKENING') { done = IA.awakeningConnections; total = C.interaction.network.awakeningNeeded; }
+    else if (st === 'RECLAIMING_SELF') { done = IA.cityLinks; total = C.interaction.network.reclaimingLinks; }
+    const countHTML = total ? Array.from({ length: total }, (_, i) => `<i class="${i < done ? 'on' : ''}"></i>`).join('') : '';
+    if ($('stageCount').innerHTML !== countHTML) $('stageCount').innerHTML = countHTML;
+    // ---- hints: a ring on the target, an arrow toward it when off screen ----
+    let ring = null, arrow = null;
+    if (st === 'NUMBNESS' && !F.cinematic) {
+      const b = IA.beaconScreen;
+      if (b && b.on && b.visible) ring = b;
+      else if (b && !b.on) arrow = b;
+      else if (!b && IA.beacon) arrow = { behind: true };
+    } else if ((st === 'FRACTURE' || st === 'AWAKENING' || st === 'RECLAIMING_SELF') && IA.hint && !F.cinematic) ring = IA.hint;
+    const hr = $('hintRing');
+    hr.classList.toggle('show', !!ring);
+    if (ring) { hr.style.left = ring.x + 'px'; hr.style.top = ring.y + 'px'; }
+    const ha = $('hintArrow');
+    ha.classList.toggle('show', !!arrow);
+    if (arrow) {
+      const W = window.innerWidth, H = window.innerHeight;
+      let dx, dy;
+      if (arrow.behind) { const cam = AG.Camera.state, b = U.v3.sub(IA.beacon.pos, cam.pos); dx = U.v3.dot(b, cam.right || [1, 0, 0]) >= 0 ? 1 : -1; dy = 0; }
+      else { dx = arrow.nx; dy = -arrow.ny; }
+      const a = Math.atan2(dy, dx), m = 46;
+      const k = Math.min((W / 2 - m) / Math.max(Math.abs(Math.cos(a)), 1e-3), (H / 2 - m) / Math.max(Math.abs(Math.sin(a)), 1e-3));
+      ha.style.left = (W / 2 + Math.cos(a) * k) + 'px'; ha.style.top = (H / 2 + Math.sin(a) * k) + 'px';
+      ha.style.transform = `rotate(${a}rad)`;
+    }
+    // ---- press-and-hold charge on a fragile light ----
+    const hold = $('holdRing');
+    if (IA.charge && st === 'FRACTURE') {
+      hold.classList.add('show', 'charge');
+      hold.style.left = IA.charge.x + 'px'; hold.style.top = IA.charge.y + 'px';
+      hold.style.transform = `scale(${0.4 + 0.6 * IA.charge.k})`;
+    } else { hold.classList.remove('show', 'charge'); hold.style.left = ''; hold.style.top = ''; hold.style.transform = ''; }
+    // ---- the thread being drawn from a lit node ----
+    const th = $('thread'), line = $('threadLine');
+    if (IA.dragging && IA.dragTo && IA.dragFrom >= 0 && IA.nodes[IA.dragFrom]) {
+      const a = IA.project(IA.nodes[IA.dragFrom].pos, AG.Camera.state);
+      if (a) {
+        const col = (IA.nodes[IA.dragFrom].col || [1, 0.8, 0.6]).map((c) => Math.round(c * 255)).join(',');
+        line.setAttribute('x1', a.x); line.setAttribute('y1', a.y); line.setAttribute('x2', IA.dragTo.x); line.setAttribute('y2', IA.dragTo.y);
+        line.style.stroke = `rgb(${col})`;
+        th.classList.toggle('far', !IA.dragOk);
+        th.classList.add('show');
+      }
+    } else th.classList.remove('show');
+    const tr = $('titleReveal');
+    const showT = S.title > 0.02;
+    if (showT !== tr.classList.contains('show')) tr.classList.toggle('show', showT);
+  }
+
+  return {
+    init, update, toast, toggleHelp, showCard,
+    toggleHidden() { forceHidden = !forceHidden; },
+    setSeed(s) { $('seedVal').textContent = s; },
+    setLoading(msg, ready) { $('loadMsg').textContent = msg; $('btnEnter').disabled = !ready; },
+    hideIntro() { $('intro').classList.add('gone'); document.body.classList.add('entered'); }
+  };
+})();

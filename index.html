@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AFTERGLOW — A City Made of Feelings</title>
+  <meta name="description" content="An interactive, procedurally generated cyberpunk music video. When the city feels what you feel.">
+  <meta name="theme-color" content="#05060c">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2305060c'/%3E%3Crect x='7' y='9' width='5' height='17' fill='%23ff2a9e'/%3E%3Crect x='14' y='4' width='5' height='22' fill='%2322e8ff'/%3E%3Crect x='21' y='12' width='4' height='14' fill='%238b45ff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css?v=20261023readable">
+</head>
+<body>
+  <div id="stage"></div>
+
+  <!-- ===== Opening screen ===== -->
+  <section id="intro">
+    <div class="intro-inner">
+      <p class="eyebrow">An interactive music video</p>
+      <h1 class="title" data-text="AFTERGLOW">AFTERGLOW</h1>
+      <p class="subtitle">A City Made of Feelings</p>
+      <p class="tagline">When the city feels what you feel.</p>
+      <button id="btnEnter" class="enter" disabled>Enter Experience</button>
+      <p id="loadMsg" class="load">Loading…</p>
+      <p class="note">Five emotional states · <em>Numbness</em> → <em>Fracture</em> → <em>Awakening</em> → <em>Reclaiming Self</em> → <em>Afterglow</em><br>
+        Nothing moves on until you act: find the pulse, steady the fragile lights, send the light through the city, then fly — and rise.<br>Mouse + arrow keys · rendered live · Voice Mode is optional.</p>
+    </div>
+  </section>
+
+  <!-- ===== HUD ===== -->
+  <header id="hud">
+    <div id="brand"><span class="wordmark">AFTERGLOW</span><span id="chapterLabel">01 · NUMBNESS</span></div>
+    <div id="hudRight"><span id="micStatus" class="pill off">voice off</span></div>
+  </header>
+
+  <div id="chapterCard">
+    <div id="cardNum">01</div>
+    <div id="cardTitle">NUMBNESS</div>
+    <div id="cardSub">The City That Stopped</div>
+  </div>
+
+  <div id="hint"></div>
+  <div id="holdRing"></div>
+  <div id="toast"></div>
+
+  <!-- ===== Interactive stages ===== -->
+  <section id="stagePanel" aria-live="polite">
+    <div id="stageTitle">Find the pulse</div>
+    <div id="stageText"></div>
+    <div id="stageCount"></div>
+  </section>
+  <div id="hintRing"></div>
+  <div id="hintArrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 4l8 8-8 8"/></svg></div>
+  <div id="ripples" aria-hidden="true"></div>
+  <svg id="thread" aria-hidden="true"><line id="threadLine" x1="0" y1="0" x2="0" y2="0"/></svg>
+
+  <!-- ===== Transport & controls ===== -->
+  <footer id="controls">
+    <div class="row">
+      <button id="btnPlay" class="ic" title="Play / Pause (Space)" aria-label="Play or pause"></button>
+      <button id="btnReplay" class="ic" title="Replay (R)" aria-label="Replay"></button>
+      <div id="timeline">
+        <div id="track" title="How much of the city has come back"><div id="progress"></div></div>
+        <span id="timeText">NUMBNESS</span>
+      </div>
+      <div id="chapters" title="Emotional states — presentation jump (earlier states complete with default choices)"></div>
+      <button id="btnSound" class="ic" title="Sound on/off (M)" aria-label="Sound"></button>
+      <input id="vol" type="range" min="0" max="1" step="0.05" value="0.85" title="Volume" aria-label="Volume">
+      <button id="btnVoice" class="ic" title="Voice Mode — microphone (V)" aria-label="Voice mode"></button>
+      <div id="voicePanel">
+        <label for="sens">sensitivity</label>
+        <input id="sens" type="range" min="0.3" max="3" step="0.1" value="1">
+        <span id="sensVal">1.0×</span>
+        <div id="meter"><div id="meterFill"></div></div>
+      </div>
+      <select id="camMode" title="Camera mode (C)" aria-label="Camera mode"></select>
+      <button id="btnRegen" class="ic" title="Generate a new city (N)" aria-label="New city"></button>
+      <button id="btnFull" class="ic" title="Fullscreen (F)" aria-label="Fullscreen"></button>
+      <button id="btnHelp" class="ic" title="Controls & settings (?)" aria-label="Help"></button>
+    </div>
+  </footer>
+
+  <!-- ===== Help / settings ===== -->
+  <section id="help" class="panel">
+    <button id="helpClose" class="close" aria-label="Close">×</button>
+    <h2>Controls</h2>
+    <div class="cols">
+      <dl>
+        <dt>Mouse drag</dt><dd>look around (01–04)</dd>
+        <dt>Wheel</dt><dd>zoom the view</dd>
+        <dt>Click</dt><dd>activate a light or building</dd>
+        <dt>Drag point to point</dt><dd>connect buildings in scene 04</dd>
+        <dt>← → ↑ ↓</dt><dd>look around (01–04)</dd>
+        <dt>Space</dt><dd>pause / resume</dd>
+        <dt>R</dt><dd>replay from the beginning</dd>
+        <dt>1 – 5</dt><dd>jump to a state (presentation)</dd>
+        <dt>C</dt><dd>cycle camera view</dd>
+        <dt>M · V</dt><dd>sound · Voice Mode</dd>
+        <dt>N · F · H · Q</dt><dd>new city · fullscreen · hide UI · quality</dd>
+      </dl>
+      <dl>
+        <dt>01 Numbness</dt><dd>one distant window still flickers, faintly and unevenly. Look around and <b>click it</b>. Hints appear if you need them.</dd>
+        <dt>02 Fracture</dt><dd><b>Click four highlighted windows.</b> Each click makes one light permanent.</dd>
+        <dt>03 Awakening</dt><dd><b>Click five outlined dark buildings.</b> Light travels to them automatically.</dd>
+        <dt>04 Reclaiming Self</dt><dd><b>Connect five pairs of golden building points.</b> Drag between two points, or click one and then another.</dd>
+        <dt>05 Afterglow</dt><dd>you fly her. <b>Mouse or ← →</b> to steer, <b>↓</b> to descend, <b>hold ↑ to rise</b> toward the light; let go to hover. Cross the light to finish.</dd>
+        <dt>Voice</dt><dd>loud sounds make the broken city tremble; a steady sound calms the rain; pitch colours the light. Optional.</dd>
+      </dl>
+    </div>
+    <div class="settings">
+      <label>Quality
+        <select id="quality">
+          <option value="auto">Auto (adaptive)</option>
+          <option value="low">Low</option>
+          <option value="balanced">Balanced</option>
+          <option value="high">High</option>
+        </select>
+      </label>
+      <span class="meta">active tier: <b id="tierNow">balanced</b> · seed: <b id="seedVal">—</b> · <span id="audioMode">soundtrack: —</span></span>
+    </div>
+    <h2 class="sub">Character assets</h2>
+    <div id="assetReport" class="assets"></div>
+    <p class="fine">The microphone signal is analysed locally for loudness, brightness and duration. It is never recorded, stored or sent. AFTERGLOW does not detect emotions.</p>
+  </section>
+
+  <!-- ===== End card ===== -->
+  <section id="titleReveal" aria-hidden="true">
+    <div class="tr-title" data-text="AFTERGLOW">AFTERGLOW</div>
+    <div class="tr-sub">A City Made of Feelings</div>
+  </section>
+
+  <section id="endCard">
+    <p class="eyebrow">AFTERGLOW</p>
+    <p class="quote">Her heart was broken.<br>But she was never beyond repair.</p>
+    <button id="endReplay" class="enter small">Replay</button>
+  </section>
+
+  <noscript><p class="nojs">AFTERGLOW needs JavaScript and WebGL 2.</p></noscript>
+
+  <!-- p5.js 1.11.11 (bundled locally for reliable GitHub Pages hosting; LGPL-2.1) -->
+  <script src="lib/p5.min.js"></script>
+  <script src="js/config.js?v=20261022asc"></script>
+  <script src="js/core/util.js?v=20261022asc"></script>
+  <script src="js/shaders/common.glsl.js?v=20261022asc"></script>
+  <script src="js/shaders/city.glsl.js?v=20261022asc"></script>
+  <script src="js/shaders/neon.glsl.js?v=20261022asc"></script>
+  <script src="js/shaders/fx.glsl.js?v=20261022asc"></script>
+  <script src="js/shaders/post.glsl.js?v=20261022asc"></script>
+  <script src="js/shaders/character.glsl.js?v=20261022asc"></script>
+  <script src="js/shaders/network.glsl.js?v=20261022asc"></script>
+  <script src="js/city/geometryBuilder.js?v=20261022asc"></script>
+  <script src="js/city/signAtlas.js?v=20261022asc"></script>
+  <script src="js/city/cityGenerator.js?v=20261022asc"></script>
+  <script src="assets/character/manifest.js?v=20261022asc"></script>
+  <script src="js/character/characterAssets.js?v=20261022asc"></script>
+  <script src="js/core/fsm.js?v=20261022asc"></script>
+  <script src="js/core/restoration.js?v=20261022asc"></script>
+  <script src="js/core/flight.js?v=20261022asc"></script>
+  <script src="js/character/characterDirector.js?v=20261022asc"></script>
+  <script src="js/core/interactions.js?v=20261022asc"></script>
+  <script src="js/core/story.js?v=20261022asc"></script>
+  <script src="js/core/camera.js?v=20261022asc"></script>
+  <script src="js/audio/mic.js?v=20261022asc"></script>
+  <script src="js/audio/score.js?v=20261022asc"></script>
+  <script src="js/audio/audio.js?v=20261022asc"></script>
+  <script src="js/render/renderer.js?v=20261022asc"></script>
+  <script src="js/ui/ui.js?v=20261022asc"></script>
+  <script src="js/sketch.js?v=20261022asc"></script>
+</body>
+</html>
